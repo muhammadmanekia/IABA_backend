@@ -94,7 +94,7 @@ cron.schedule("* * * * *", async () => {
         // Delete the notification BEFORE sending
         await ScheduledNotification.findByIdAndDelete(notification._id);
 
-        // Create FCM message
+        // Create FCM message with sound
         const message = {
           notification: {
             title: notification.title,
@@ -106,6 +106,23 @@ cron.schedule("* * * * *", async () => {
             eventId: notification.eventId
               ? notification.eventId.toString()
               : "",
+          },
+          android: {
+            priority: "high",
+            notification: {
+              sound: "default",
+              channelId: "default",
+              priority: "high",
+            },
+          },
+          apns: {
+            payload: {
+              "aps": {
+                // sound: "default",
+                // badge: 1,
+                "content-available": 1,
+              },
+            },
           },
         };
 

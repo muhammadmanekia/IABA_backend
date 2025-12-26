@@ -76,7 +76,7 @@ exports.fetchAndSaveEvents = async (req, res) => {
             location: event.location || "",
             imageUrl: getImageUrlByEventName(event.summary),
             price: "",
-            organizers: "Momin Center",
+            organizers: "IABA",
             registrationLink: "",
             contact: "",
             requireRSVP: false,
