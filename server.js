@@ -23,6 +23,7 @@ const googleEventRoutes = require("./routes/googleEvents");
 const uploadRoutes = require("./routes/upload");
 const announcementRoutes = require("./routes/announcements");
 const appVersionRoutes = require("./routes/appVersionRoutes");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use("/api/google", googleEventRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/app-version", appVersionRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Database connection
 mongoose
