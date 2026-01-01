@@ -27,16 +27,49 @@ const adminRoutes = require("./routes/admin");
 
 const app = express();
 
+// Rate limiting configuration
+const rateLimit = require('express-rate-limit');
+
+// General API rate limiter - 100 requests per 15 minutes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Stricter rate limiter for authentication endpoints - 5 requests per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many login attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Admin endpoints rate limiter - 10 requests per 15 minutes
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many admin requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Middleware
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
 
+// Apply general rate limiting to all API routes
+app.use('/api/', apiLimiter);
+
 // Routes
 app.use("/api/messages", messagesRoutes);
 app.use("/api/firebase", notificationRoutes);
-app.use("/api/auth", authRoute);
+app.use("/api/auth", authLimiter, authRoute); // Stricter limit for auth
 app.use("/api/events", eventRoutes);
 app.use("/api/donations", donationRoutes);
 app.use("/api/pledges", pledgeRoutes);
@@ -47,7 +80,7 @@ app.use("/api/google", googleEventRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/app-version", appVersionRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/admin", adminLimiter, adminRoutes); // Stricter limit for admin
 
 // Database connection
 mongoose
