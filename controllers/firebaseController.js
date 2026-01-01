@@ -106,6 +106,8 @@ cron.schedule("* * * * *", async () => {
             eventId: notification.eventId
               ? notification.eventId.toString()
               : "",
+            title: notification.title,
+            body: notification.body,
           },
           android: {
             priority: "high",
