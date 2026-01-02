@@ -120,8 +120,8 @@ cron.schedule("* * * * *", async () => {
           apns: {
             payload: {
               "aps": {
-                // sound: "default",
-                // badge: 1,
+                sound: "default",
+                badge: 1,
                 "content-available": 1,
               },
             },
