@@ -2,9 +2,8 @@ const mongoose = require('mongoose');
 
 const FeedbackSchema = new mongoose.Schema({
     user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: false // Optional, in case we allow anonymous or logged-out feedback later
+        type: String,
+        required: false // Optional, can be ObjectId or custom string ID
     },
     userName: {
         type: String, // Snapshot of name in case user is deleted/optional
