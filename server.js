@@ -32,10 +32,10 @@ app.set('trust proxy', 1); // Trust first proxy (Render load balancer)
 // Rate limiting configuration
 const rateLimit = require('express-rate-limit');
 
-// General API rate limiter - 100 requests per 15 minutes
+// General API rate limiter - 500 requests per 15 minutes
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 500, // Limit each IP to 500 requests per windowMs
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
@@ -50,10 +50,10 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Admin endpoints rate limiter - 10 requests per 15 minutes
+// Admin endpoints rate limiter - 100 requests per 15 minutes
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100,
   message: 'Too many admin requests, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
