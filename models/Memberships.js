@@ -1,18 +1,23 @@
 const mongoose = require("mongoose");
 
 const membershipsSchema = new mongoose.Schema({
-  startDate: { type: String },
-  firstName: { type: String },
-  lastName: { type: String },
-  phoneNumber: { type: String },
+  fullName: { type: String },
+  spouseFullName: { type: String },
   email: { type: String },
-  spouseFirstName: { type: String },
-  spouseLastName: { type: String },
-  spousePhoneNumber: { type: String },
-  spouseEmail: { type: String },
-  mailingAddress: { type: String },
+  cellPhone: { type: String },
+  homeAddress: { type: String },
+  dob: { type: String },
+  maritalStatus: { type: String },
+  numChildren: { type: Number },
+  childrenInfo: [
+    {
+      name: { type: String },
+      dob: { type: String },
+    },
+  ],
   membershipType: { type: String },
-  isVotingMember: { type: Boolean },
+  agreedToConstitution: { type: Boolean },
+  comment: { type: String },
   date: {
     type: Date,
     default: Date.now,
