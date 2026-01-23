@@ -7,6 +7,12 @@ const ScheduledNotification = require("../models/ScheduledNotification");
 exports.sendNotification = async (req, res) => {
   const { topic, title, body, screen, eventId, sendAt } = req.body;
 
+  // Skip notifications in development
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[DEV] Skipping notification: ${title}`);
+    return res.status(200).json({ success: true, message: "Skipped in dev" });
+  }
+
   try {
     // Check if a notification for this event id already exists
     const existingNotification = await Notification.findOne({
@@ -72,6 +78,10 @@ exports.deleteNotification = async (req, res) => {
 };
 
 cron.schedule("* * * * *", async () => {
+  if (process.env.NODE_ENV !== "production") {
+    // console.log("[DEV] Cron skipped");
+    return;
+  }
   console.log("Checking for scheduled notifications...");
 
   const now = new Date();

@@ -4,6 +4,15 @@ const ScheduledNotification = require("../models/ScheduledNotification");
 exports.scheduleNotification = async (req, res) => {
   const { topic, title, body, screen, eventId, sendAt } = req.body;
 
+  // Skip notifications in development to prevent accidental live broadcasts
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[DEV] Skipping notification scheduling: ${title}`);
+    return res.status(200).json({
+      success: true,
+      message: "Notification skipped in development mode."
+    });
+  }
+
   try {
     // Check if a scheduled notification for this event ID already exists
     let existingNotification;

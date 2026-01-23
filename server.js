@@ -86,10 +86,14 @@ app.use("/api/admin", adminLimiter, adminRoutes); // Stricter limit for admin
 app.use("/api/feedback", feedbackRoutes);
 
 // Database connection
+const isProduction = process.env.NODE_ENV === "production";
+const dbUri = isProduction ? process.env.MONGODB_URI : (process.env.MONGODB_DEV_URI || process.env.MONGODB_URI);
+const dbName = isProduction ? "Production" : "Development";
+
 mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log("Connected to MongoDB: IABA"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .connect(dbUri)
+  .then(() => console.log(`Connected to MongoDB: IABA (${dbName} Database)`))
+  .catch((err) => console.error(`MongoDB connection error (${dbName}):`, err));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
