@@ -17,7 +17,7 @@ exports.getAllEvents = async (req, res) => {
 exports.getUpcomingEvents = async (req, res) => {
   try {
     const now = new Date(); // Get the current date and time
-    now.setHours(now.getHours() - 6); // Adjust to CST timezone
+    now.setHours(now.getHours() - 7); // Adjust to CST timezone and include current hour events
     console.log(now);
 
     // Get pagination parameters from the request query
@@ -56,7 +56,7 @@ exports.getUpcomingEvents = async (req, res) => {
 exports.getUpcomingEventsNew = async (req, res) => {
   try {
     const now = new Date(); // Get the current date and time
-    now.setHours(now.getHours() - 6); // Adjust to CST timezone
+    now.setHours(now.getHours() - 7); // Adjust to CST timezone and include current hour events
     console.log(now);
 
     // Get pagination parameters from the request query
