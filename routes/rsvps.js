@@ -47,6 +47,16 @@ router.get("/user/:userId", async (req, res) => {
   }
 });
 
+// Get RSVPs for a guest by email
+router.get("/guest/:email", async (req, res) => {
+  try {
+    const rsvps = await Rsvp.find({ email: req.params.email });
+    res.json(rsvps);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Delete RSVP by userId and eventId
 router.delete("/:eventId/user/:userId", async (req, res) => {
   const { eventId, userId } = req.params;
@@ -66,6 +76,29 @@ router.delete("/:eventId/user/:userId", async (req, res) => {
     res.status(200).json({ message: "RSVP successfully deleted." });
   } catch (error) {
     console.error("Error deleting RSVP:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete Guest RSVP by email and eventId
+router.delete("/:eventId/guest/:email", async (req, res) => {
+  const { eventId, email } = req.params;
+
+  try {
+    const deletedRsvp = await Rsvp.findOneAndDelete({
+      event: eventId,
+      email: email,
+    });
+
+    if (!deletedRsvp) {
+      return res
+        .status(404)
+        .json({ message: "Guest RSVP not found for this email and event." });
+    }
+
+    res.status(200).json({ message: "Guest RSVP successfully deleted." });
+  } catch (error) {
+    console.error("Error deleting Guest RSVP:", error);
     res.status(500).json({ message: error.message });
   }
 });
