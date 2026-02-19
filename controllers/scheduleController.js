@@ -4,21 +4,29 @@ const ScheduledNotification = require("../models/ScheduledNotification");
 exports.scheduleNotification = async (req, res) => {
   const { topic, title, body, screen, eventId, sendAt } = req.body;
 
-  // Skip notifications in development to prevent accidental live broadcasts
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[DEV] Skipping notification scheduling: ${title}`);
-    return res.status(200).json({
-      success: true,
-      message: "Notification skipped in development mode."
-    });
+  // In development, use a dev-specific topic to avoid sending to production users
+  const isDev = process.env.NODE_ENV !== "production";
+  const effectiveTopic = isDev ? `${topic}_dev` : topic;
+
+  if (isDev) {
+    console.log(`[DEV] Scheduling notification to dev topic "${effectiveTopic}": ${title}`);
   }
 
   try {
     // Check if a scheduled notification for this event ID already exists
     let existingNotification;
-    if (eventId != "null") {
+    if (eventId && eventId !== "null") {
       existingNotification = await ScheduledNotification.findOne({
         eventId,
+      });
+    } else {
+      // Dedup window: prevent duplicate notifications with the same title+body
+      // within a 5-minute window (handles cases like sheikh messages with no eventId)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      existingNotification = await ScheduledNotification.findOne({
+        title,
+        body,
+        createdAt: { $gte: fiveMinutesAgo },
       });
     }
 
@@ -31,10 +39,11 @@ exports.scheduleNotification = async (req, res) => {
       existingNotification.screen = screen;
       existingNotification.topic = topic;
       await existingNotification.save();
+      console.log(`[Notification] Updated existing notification: "${title}"`);
     } else {
       // Create a new scheduled notification
       const newScheduledNotification = new ScheduledNotification({
-        topic,
+        topic: effectiveTopic,
         title,
         body,
         screen,
@@ -44,6 +53,7 @@ exports.scheduleNotification = async (req, res) => {
         status: "pending",
       });
       await newScheduledNotification.save();
+      console.log(`[Notification] Scheduled new notification: "${title}"`);
     }
 
     res

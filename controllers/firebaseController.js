@@ -7,11 +7,9 @@ const ScheduledNotification = require("../models/ScheduledNotification");
 exports.sendNotification = async (req, res) => {
   const { topic, title, body, screen, eventId, sendAt } = req.body;
 
-  // Skip notifications in development
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[DEV] Skipping notification: ${title}`);
-    return res.status(200).json({ success: true, message: "Skipped in dev" });
-  }
+  // In dev, use a dev-specific topic to avoid sending to production users
+  const isDev = process.env.NODE_ENV !== "production";
+  const effectiveTopic = isDev ? `${topic}_dev` : topic;
 
   try {
     // Check if a notification for this event id already exists
@@ -26,7 +24,7 @@ exports.sendNotification = async (req, res) => {
     } else {
       // Save notification to database if it doesn't exist
       const newNotification = new Notification({
-        topic,
+        topic: effectiveTopic,
         title,
         body,
         screen,
@@ -78,11 +76,12 @@ exports.deleteNotification = async (req, res) => {
 };
 
 cron.schedule("* * * * *", async () => {
-  if (process.env.NODE_ENV !== "production") {
-    // console.log("[DEV] Cron skipped");
-    return;
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    // In dev, still process notifications but they go to dev topics only
+    // console.log("[DEV] Checking for dev notifications...");
   }
-  console.log("Checking for scheduled notifications...");
+  // console.log("Checking for scheduled notifications...");
 
   const now = new Date();
 
