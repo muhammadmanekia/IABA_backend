@@ -1,28 +1,98 @@
 const Event = require("../models/Event");
 const googleOAuthManager = require("../controllers/googleOAuthManager");
 const { google } = require("googleapis");
-
-// Function to get image URL based on event summary
-function getImageUrlByEventName(summary) {
-  if (summary.includes("Duʿā Kumayl")) {
-    return "https://mcusercontent.com/185fa65767eb01e2186a1ff88/images/2fff4a16-6cd5-19f3-ee8f-c5d111c3ecb8.jpeg";
-  }
-  if (summary.includes("Salāt-e-Jumuʿāh")) {
-    return "https://mcusercontent.com/185fa65767eb01e2186a1ff88/images/786b2746-6408-1be9-0ef6-43c6ae3cce62.jpeg";
-  }
-  // Add more conditions for other names and their corresponding image URLs if needed
-  return ""; // Return an empty string if no match is found
-}
+const cron = require("node-cron");
 
 function cleanEventDescription(description) {
-  // Remove HTML tags
-  let cleanDesc = description.replace(/<[^>]*>/g, "");
+  console.log("Description: ", description);
+  if (!description) {
+    return {
+      description: "",
+      imageUrl: "",
+      price: "",
+      registrationLink: "",
+      location: "",
+      audience: "",
+      requireRSVP: false,
+      organizers: "",
+      contact: "",
+    };
+  }
 
-  // Split and take first part if it includes a series of dashes
-  const parts = cleanDesc.split(/-{5,}/); // Split on five or more dashes
+  // 1. Clean HTML tags more intelligently to avoid joining text/URLs
+  let cleanDesc = description
+    .replace(/<(br|p|div|li|h[1-6])[^>]*>/gi, "\n") // Blocks to split into lines
+    .replace(/<[^>]*>/g, " ")                      // Others to spaces
 
-  // Return first part, trimmed
-  return parts[0].trim();
+  cleanDesc = cleanDesc
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+  // 2. Extract and remove first image URL
+  const imageExtensionRegex = /(https?:\/\/[^\s<"']+\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?)/i;
+  const imageMatch = cleanDesc.match(imageExtensionRegex);
+
+  let imageUrl = "";
+  if (imageMatch) {
+    imageUrl = imageMatch[1].trim();
+    cleanDesc = cleanDesc.replace(imageUrl, "");
+  }
+
+  // 3. Extract and remove structured fields
+  const keywords = ["price", "registrationLink", "location", "audience", "RSVP", "organizers", "contact"];
+
+  const extractField = (fieldName, type = "string") => {
+    // Regex: fieldName: {greedy match} but stop before next keyword, comma, or newline
+    // Lookahead: (?=\s*(?:price|location|...):|[, \n\r]|$)
+    const keywordsPattern = keywords.join("|");
+    const regex = new RegExp(`${fieldName}:\\s*(.*?)(?=\\s*(?:${keywordsPattern}):|[\\n\\r]|$)`, "i");
+
+    const match = cleanDesc.match(regex);
+    if (match) {
+      // Remove the exact matched part from the description
+      cleanDesc = cleanDesc.replace(match[0], "");
+
+      let value = match[1].trim();
+      // Clean up trailing commas if any
+      value = value.replace(/,$/, "").trim();
+
+      if (type === "boolean") {
+        return value.toLowerCase() === "true" || value.toLowerCase() === "yes" || value.toLowerCase() === "required";
+      }
+      return value;
+    }
+    return type === "boolean" ? null : "";
+  };
+
+  const fields = {
+    price: extractField("price"),
+    registrationLink: extractField("registrationLink"),
+    location: extractField("location"),
+    audience: extractField("audience"),
+    requireRSVP: extractField("RSVP", "boolean"),
+    organizers: extractField("organizers"),
+    contact: extractField("contact"),
+  };
+
+  // Clean up the description
+  let finalDesc = cleanDesc
+    .split(/-{5,}/)[0]                 // Split on five or more dashes
+    .replace(/,\s*,/g, ",")            // Remove double commas
+    .replace(/[ \t]+/g, " ")           // Collapse horizontal whitespace
+    .replace(/[ \t]*\n[ \t]*/g, "\n\n")  // Remove horizontal whitespace around newlines
+    .replace(/\n+/g, "\n\n")             // Collapse multiple newlines into one
+    .trim()
+    .replace(/^[, ]+|[, ]+$/g, "");    // Remove leading/trailing commas or spaces
+
+  return {
+    description: finalDesc,
+    imageUrl,
+    ...fields,
+  };
 }
 
 function formatTime(timeString) {
@@ -34,7 +104,7 @@ function formatTime(timeString) {
   });
 }
 
-exports.fetchAndSaveEvents = async (req, res) => {
+async function syncEvents(timeMin, timeMax) {
   try {
     // Initialize OAuth client
     await googleOAuthManager.initializeAuth();
@@ -45,103 +115,133 @@ exports.fetchAndSaveEvents = async (req, res) => {
 
     const tokens = googleOAuthManager.loadTokens();
     if (!tokens) {
-      return res.status(401).json({
-        message: "Authentication required",
-        authUrl: googleOAuthManager.generateAuthUrl(),
-      });
+      console.error("Sync failed: Authentication required (no tokens found)");
+      return { success: false, message: "Authentication required" };
     }
 
     // Fetch events from primary calendar
-    const response = await calendar.events.list({
-      calendarId: "c_6sj7il06t2m6k7q5fde358funk@group.calendar.google.com",
-      timeMin: new Date().toISOString(),
+    const params = {
+      calendarId: process.env.CALENDAR_ID,
+      timeMin: timeMin || new Date().toISOString(),
       maxResults: 50,
       singleEvents: true,
       orderBy: "startTime",
-    });
+    };
+
+    if (timeMax) {
+      params.timeMax = timeMax;
+    }
+
+    const response = await calendar.events.list(params);
 
     const events = response.data.items;
-    const savedEvents = await Promise.all(
+    const syncResults = await Promise.all(
       events.map(async (event) => {
+        const extractedData = cleanEventDescription(event.description || "");
+
+        const eventData = {
+          title: event.summary,
+          description: extractedData.description || "",
+          date: new Date(event.start.dateTime || event.start.date),
+          startTime:
+            formatTime(event.start.dateTime) || formatTime(event.start.date),
+          endTime: formatTime(event.end.dateTime) || formatTime(event.end.date),
+          location: extractedData.location || event.location || "",
+          imageUrl: extractedData.imageUrl || "",
+          price: extractedData.price || "",
+          organizers: extractedData.organizers || "IABA",
+          registrationLink: extractedData.registrationLink || "",
+          contact: extractedData.contact || "",
+          requireRSVP: extractedData.requireRSVP !== null ? extractedData.requireRSVP : false,
+          audience: extractedData.audience || "",
+          googleId: event.id,
+          startDateTime: event.start.dateTime || event.start.date,
+          endDateTime: event.end.dateTime || event.end.date,
+        };
+
         const existingEvent = await Event.findOne({ googleId: event.id });
-        if (!existingEvent) {
-          const newEvent = new Event({
-            title: event.summary,
-            description: cleanEventDescription(event.description || "") || "",
-            date: new Date(event.start.dateTime || event.start.date),
-            startTime:
-              formatTime(event.start.dateTime) || formatTime(event.start.date),
-            endTime:
-              formatTime(event.end.dateTime) || formatTime(event.end.date),
-            location: event.location || "",
-            imageUrl: getImageUrlByEventName(event.summary),
-            price: "",
-            organizers: "IABA",
-            registrationLink: "",
-            contact: "",
-            requireRSVP: false,
-            audience: "",
-            googleId: event.id,
-            startDateTime: event.start.dateTime,
-            endDateTime: event.end.dateTime,
+        if (existingEvent) {
+          // Update existing event
+          return await Event.findOneAndUpdate({ googleId: event.id }, eventData, {
+            new: true,
           });
-
-          await newEvent.save();
-
-          return newEvent;
+        } else {
+          // Create new event
+          const newEvent = new Event(eventData);
+          return await newEvent.save();
         }
       })
     );
 
-    // Save events to MongoDB
-    // const savedEvents = await Promise.all(
-    //   events.map(async (event) => {
-    //     // Check if event already exists to avoid duplicates
-    //     const existingEvent = await Event.findOne({ googleId: event.id });
+    console.log(`Synced ${syncResults.length} events from Google Calendar.`);
+    return { success: true, count: syncResults.length, events: syncResults };
+  } catch (error) {
+    console.error("Error syncing events:", error);
+    return { success: false, error: error.message };
+  }
+}
 
-    //     if (existingEvent) {
-    //       // Update existing event
-    //       return await Event.findOneAndUpdate(
-    //         { googleId: event.id },
-    //         {
-    //           summary: event.summary,
-    //           description: event.description,
-    //           start: event.start.dateTime || event.start.date,
-    //           end: event.end.dateTime || event.end.date,
-    //           location: event.location,
-    //           status: event.status,
-    //         },
-    //         { new: true }
-    //       );
-    //     } else {
-    //       // Create new event
-    //       return await Event.create({
-    //         googleId: event.id,
-    //         summary: event.summary,
-    //         description: event.description,
-    //         start: event.start.dateTime || event.start.date,
-    //         end: event.end.dateTime || event.end.date,
-    //         location: event.location,
-    //         status: event.status,
-    //       });
-    //     }
-    //   })
-    // );
-    console.log(savedEvents);
+exports.fetchAndSaveEvents = async (req, res) => {
+  const { timeMin, timeMax } = req.query;
+  const result = await syncEvents(timeMin, timeMax);
 
+  if (result.success) {
     res.status(200).json({
       message: "Events fetched and saved successfully",
-      eventCount: savedEvents.length,
-      events: savedEvents,
+      eventCount: result.count,
+      events: result.events,
     });
-  } catch (error) {
-    console.error("Error fetching or saving events:", error);
+  } else {
+    if (result.message === "Authentication required") {
+      return res.status(401).json({
+        message: result.message,
+        authUrl: googleOAuthManager.generateAuthUrl(),
+      });
+    }
     res.status(500).json({
       message: "Error fetching or saving events",
-      error: error.message,
+      error: result.error,
     });
   }
 };
+
+// Cron job: Every Sunday at 8:00 PM CST
+// Cron Format: minute hour dayOfMonth month dayOfWeek
+// 0 20 * * 0 is Sunday at 8 PM
+cron.schedule("0 20 * * 0", async () => {
+  console.log("Running scheduled Google Calendar sync (Sunday 8 PM)...");
+
+  const syncRange = process.env.SYNC_RANGE || "week";
+  const now = new Date();
+
+  // timeMin: Next Monday 00:00:00
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() + 1);
+  nextMonday.setHours(0, 0, 0, 0);
+
+  let timeMax = null;
+
+  if (syncRange === "week") {
+    // Next Sunday 23:59:59
+    const nextSunday = new Date(nextMonday);
+    nextSunday.setDate(nextMonday.getDate() + 6);
+    nextSunday.setHours(23, 59, 59, 999);
+    timeMax = nextSunday.toISOString();
+  } else if (syncRange === "month") {
+    // End of next month
+    const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    endOfNextMonth.setHours(23, 59, 59, 999);
+    timeMax = endOfNextMonth.toISOString();
+  } else if (syncRange === "unlimited") {
+    timeMax = null;
+  }
+
+  console.log(`Syncing events (Range: ${syncRange}) from ${nextMonday.toISOString()} to ${timeMax || "Unlimited"}`);
+
+  await syncEvents(nextMonday.toISOString(), timeMax);
+}, {
+  timezone: "America/Chicago"
+});
 
 exports.getAllEvents = async (req, res) => {
   try {
