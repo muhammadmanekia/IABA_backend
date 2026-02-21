@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const ScheduledNotification = require("../models/ScheduledNotification");
+const Notification = require("../models/Notifications");
 
 exports.scheduleNotification = async (req, res) => {
   const { topic, title, body, screen, eventId, sendAt } = req.body;
@@ -19,6 +20,30 @@ exports.scheduleNotification = async (req, res) => {
       existingNotification = await ScheduledNotification.findOne({
         eventId,
       });
+
+      // Also check if this notification was already sent (lives in Notification collection)
+      if (!existingNotification) {
+        const alreadySent = await Notification.findOne({
+          eventId,
+          status: "sent",
+        });
+        if (alreadySent) {
+          // Check if the sendAt time changed (event rescheduled)
+          const newSendAt = sendAt || new Date();
+          const sendAtChanged = Math.abs(
+            new Date(alreadySent.sendAt).getTime() - new Date(newSendAt).getTime()
+          ) > 60000;
+
+          if (!sendAtChanged) {
+            // Already sent and not rescheduled — skip
+            return res
+              .status(200)
+              .json({ success: true, message: "Notification already sent." });
+          }
+          // Event was rescheduled — delete old sent record and allow re-scheduling
+          await Notification.deleteOne({ _id: alreadySent._id });
+        }
+      }
     } else {
       // Dedup window: prevent duplicate notifications with the same title+body
       // within a 5-minute window (handles cases like sheikh messages with no eventId)
@@ -31,8 +56,21 @@ exports.scheduleNotification = async (req, res) => {
     }
 
     if (existingNotification) {
-      // Update existing notification with new sendAt time and reset status
-      existingNotification.sendAt = sendAt || new Date();
+      // Only re-schedule if sendAt time actually changed (event was rescheduled)
+      // or if it's still pending. Don't reset already-sent notifications.
+      const newSendAt = sendAt || new Date();
+      const sendAtChanged = Math.abs(
+        new Date(existingNotification.sendAt).getTime() - new Date(newSendAt).getTime()
+      ) > 60000; // More than 1 minute difference
+
+      if (existingNotification.status === "sent" && !sendAtChanged) {
+        // Already sent and schedule hasn't changed — skip
+        return res
+          .status(200)
+          .json({ success: true, message: "Notification already sent." });
+      }
+
+      existingNotification.sendAt = newSendAt;
       existingNotification.status = "pending";
       existingNotification.title = title;
       existingNotification.body = body;
