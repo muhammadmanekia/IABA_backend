@@ -86,9 +86,17 @@ cron.schedule("* * * * *", async () => {
   const now = new Date();
 
   try {
+    // Only process notifications matching the current environment
+    // Dev server: only send _dev topic notifications
+    // Prod server: only send non-_dev topic notifications
+    const topicFilter = isDev
+      ? { topic: { $regex: /_dev$/ } }
+      : { topic: { $not: { $regex: /_dev$/ } } };
+
     const notificationsToSend = await ScheduledNotification.find({
       sendAt: { $lte: now },
       status: "pending",
+      ...topicFilter,
     });
 
     if (!notificationsToSend.length) {

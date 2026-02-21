@@ -15,8 +15,7 @@ const scheduledNotificationSchema = new mongoose.Schema(
       type: String,
     },
     eventId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "events",
+      type: String,
       required: false,
     },
     sendAt: { type: Date },

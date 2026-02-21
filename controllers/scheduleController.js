@@ -37,7 +37,7 @@ exports.scheduleNotification = async (req, res) => {
       existingNotification.title = title;
       existingNotification.body = body;
       existingNotification.screen = screen;
-      existingNotification.topic = topic;
+      existingNotification.topic = effectiveTopic;
       await existingNotification.save();
       console.log(`[Notification] Updated existing notification: "${title}"`);
     } else {
