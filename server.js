@@ -25,6 +25,7 @@ const announcementRoutes = require("./routes/announcements");
 const appVersionRoutes = require("./routes/appVersionRoutes");
 const adminRoutes = require("./routes/admin");
 const feedbackRoutes = require("./routes/feedback");
+const fundraiserRoutes = require("./routes/fundraiser");
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Render load balancer)
@@ -84,6 +85,7 @@ app.use("/api/announcements", announcementRoutes);
 app.use("/api/app-version", appVersionRoutes);
 app.use("/api/admin", adminLimiter, adminRoutes); // Stricter limit for admin
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/fundraiser", fundraiserRoutes);
 
 // Database connection
 const isProduction = process.env.NODE_ENV === "production";
