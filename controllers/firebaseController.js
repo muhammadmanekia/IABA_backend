@@ -149,17 +149,29 @@ cron.schedule("* * * * *", async () => {
         await admin.messaging().send(message);
         console.log(`Notification sent for event ${notification.eventId}`);
 
-        // Move the notification to the Notifications collection
-        await Notification.create({
-          topic: notification.topic,
-          title: notification.title,
-          body: notification.body,
-          screen: notification.screen,
-          eventId: notification.eventId,
-          sendAt: notification.sendAt,
-          createdAt: new Date(),
-          status: "sent",
-        });
+        // Move the notification to the Notifications collection (upsert to prevent duplicates)
+        const notifFilter = notification.eventId
+          ? { eventId: notification.eventId }
+          : { title: notification.title, body: notification.body, sendAt: notification.sendAt };
+
+        await Notification.findOneAndUpdate(
+          notifFilter,
+          {
+            $set: {
+              topic: notification.topic,
+              title: notification.title,
+              body: notification.body,
+              screen: notification.screen,
+              eventId: notification.eventId,
+              sendAt: notification.sendAt,
+              status: "sent",
+            },
+            $setOnInsert: {
+              createdAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
       } catch (error) {
         console.error(`Error sending notification ${notification._id}:`, error);
         await ScheduledNotification.findByIdAndUpdate(notification._id, {

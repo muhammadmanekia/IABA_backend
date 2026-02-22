@@ -17,6 +17,7 @@ const scheduledNotificationSchema = new mongoose.Schema(
     eventId: {
       type: String,
       required: false,
+      index: { unique: true, sparse: true },
     },
     sendAt: { type: Date },
     status: { type: String },

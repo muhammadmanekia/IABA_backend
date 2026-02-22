@@ -13,90 +13,76 @@ exports.scheduleNotification = async (req, res) => {
     console.log(`[DEV] Scheduling notification to dev topic "${effectiveTopic}": ${title}`);
   }
 
+  const newSendAt = sendAt || new Date();
+
   try {
-    // Check if a scheduled notification for this event ID already exists
-    let existingNotification;
     if (eventId && eventId !== "null") {
-      existingNotification = await ScheduledNotification.findOne({
-        eventId,
-      });
+      // --- Event-based notification: use atomic upsert to prevent race conditions ---
 
-      // Also check if this notification was already sent (lives in Notification collection)
-      if (!existingNotification) {
-        const alreadySent = await Notification.findOne({
-          eventId,
-          status: "sent",
-        });
-        if (alreadySent) {
-          // Check if the sendAt time changed (event rescheduled)
-          const newSendAt = sendAt || new Date();
-          const sendAtChanged = Math.abs(
-            new Date(alreadySent.sendAt).getTime() - new Date(newSendAt).getTime()
-          ) > 60000;
+      // First, check if already sent (in Notification collection)
+      const alreadySent = await Notification.findOne({ eventId, status: "sent" });
+      if (alreadySent) {
+        const sendAtChanged = Math.abs(
+          new Date(alreadySent.sendAt).getTime() - new Date(newSendAt).getTime()
+        ) > 60000;
 
-          if (!sendAtChanged) {
-            // Already sent and not rescheduled — skip
-            return res
-              .status(200)
-              .json({ success: true, message: "Notification already sent." });
-          }
-          // Event was rescheduled — delete old sent record and allow re-scheduling
-          await Notification.deleteOne({ _id: alreadySent._id });
+        if (!sendAtChanged) {
+          return res.status(200).json({ success: true, message: "Notification already sent." });
         }
+        // Event rescheduled — remove old sent record so it can be re-scheduled
+        await Notification.deleteOne({ _id: alreadySent._id });
       }
+
+      // Atomic upsert: find by eventId, update or create in one operation
+      // This prevents race conditions where two requests both find nothing
+      await ScheduledNotification.findOneAndUpdate(
+        { eventId },
+        {
+          $set: {
+            topic: effectiveTopic,
+            title,
+            body,
+            screen,
+            sendAt: newSendAt,
+            status: "pending",
+          },
+          $setOnInsert: {
+            eventId,
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      console.log(`[Notification] Upserted notification for event ${eventId}: "${title}"`);
     } else {
-      // Dedup window: prevent duplicate notifications with the same title+body
-      // within a 5-minute window (handles cases like sheikh messages with no eventId)
+      // --- Non-event notification (sheikh messages, etc): dedup by title+body window ---
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      existingNotification = await ScheduledNotification.findOne({
+      const existing = await ScheduledNotification.findOne({
         title,
         body,
         createdAt: { $gte: fiveMinutesAgo },
       });
-    }
 
-    if (existingNotification) {
-      // Only re-schedule if sendAt time actually changed (event was rescheduled)
-      // or if it's still pending. Don't reset already-sent notifications.
-      const newSendAt = sendAt || new Date();
-      const sendAtChanged = Math.abs(
-        new Date(existingNotification.sendAt).getTime() - new Date(newSendAt).getTime()
-      ) > 60000; // More than 1 minute difference
-
-      if (existingNotification.status === "sent" && !sendAtChanged) {
-        // Already sent and schedule hasn't changed — skip
-        return res
-          .status(200)
-          .json({ success: true, message: "Notification already sent." });
+      if (existing) {
+        return res.status(200).json({ success: true, message: "Duplicate notification skipped." });
       }
 
-      existingNotification.sendAt = newSendAt;
-      existingNotification.status = "pending";
-      existingNotification.title = title;
-      existingNotification.body = body;
-      existingNotification.screen = screen;
-      existingNotification.topic = effectiveTopic;
-      await existingNotification.save();
-      console.log(`[Notification] Updated existing notification: "${title}"`);
-    } else {
-      // Create a new scheduled notification
-      const newScheduledNotification = new ScheduledNotification({
+      await ScheduledNotification.create({
         topic: effectiveTopic,
         title,
         body,
         screen,
-        eventId: eventId && eventId !== "null" ? eventId : null,
-        sendAt: sendAt || new Date(),
+        eventId: null,
+        sendAt: newSendAt,
         createdAt: new Date(),
         status: "pending",
       });
-      await newScheduledNotification.save();
+
       console.log(`[Notification] Scheduled new notification: "${title}"`);
     }
 
-    res
-      .status(200)
-      .json({ success: true, message: "Notification scheduled successfully." });
+    res.status(200).json({ success: true, message: "Notification scheduled successfully." });
   } catch (error) {
     console.error("Error scheduling notification:", error);
     res.status(500).json({ success: false, error: error.message });
