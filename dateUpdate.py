@@ -5,7 +5,7 @@ from pymongo import MongoClient
 client = MongoClient(
     "mongodb+srv://muhammadmanekia:dbUserPassword@cluster0.xfvhsg6.mongodb.net/"
 )
-db = client["Momin"]
+db = client["IABA"]
 collection = db["events"]
 
 

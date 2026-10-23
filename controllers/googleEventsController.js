@@ -104,6 +104,33 @@ function formatTime(timeString) {
   });
 }
 
+// Maps a raw Google Calendar event into the shape stored in the Event collection.
+// Kept as a standalone function so previewCalendarSync.js can show exactly what a
+// sync would write without touching the database.
+function buildEventData(event) {
+  const extractedData = cleanEventDescription(event.description || "");
+
+  return {
+    title: event.summary,
+    description: extractedData.description || "",
+    date: new Date(event.start.dateTime || event.start.date),
+    startTime:
+      formatTime(event.start.dateTime) || formatTime(event.start.date),
+    endTime: formatTime(event.end.dateTime) || formatTime(event.end.date),
+    location: extractedData.location || event.location || "",
+    imageUrl: extractedData.imageUrl || "",
+    price: extractedData.price || "",
+    organizers: extractedData.organizers || "IABA",
+    registrationLink: extractedData.registrationLink || "",
+    contact: extractedData.contact || "",
+    requireRSVP: extractedData.requireRSVP !== null ? extractedData.requireRSVP : false,
+    audience: extractedData.audience || "",
+    googleId: event.id,
+    startDateTime: event.start.dateTime || event.start.date,
+    endDateTime: event.end.dateTime || event.end.date,
+  };
+}
+
 async function syncEvents(timeMin, timeMax) {
   try {
     // Initialize OAuth client
@@ -137,27 +164,7 @@ async function syncEvents(timeMin, timeMax) {
     const events = response.data.items;
     const syncResults = await Promise.all(
       events.map(async (event) => {
-        const extractedData = cleanEventDescription(event.description || "");
-
-        const eventData = {
-          title: event.summary,
-          description: extractedData.description || "",
-          date: new Date(event.start.dateTime || event.start.date),
-          startTime:
-            formatTime(event.start.dateTime) || formatTime(event.start.date),
-          endTime: formatTime(event.end.dateTime) || formatTime(event.end.date),
-          location: extractedData.location || event.location || "",
-          imageUrl: extractedData.imageUrl || "",
-          price: extractedData.price || "",
-          organizers: extractedData.organizers || "IABA",
-          registrationLink: extractedData.registrationLink || "",
-          contact: extractedData.contact || "",
-          requireRSVP: extractedData.requireRSVP !== null ? extractedData.requireRSVP : false,
-          audience: extractedData.audience || "",
-          googleId: event.id,
-          startDateTime: event.start.dateTime || event.start.date,
-          endDateTime: event.end.dateTime || event.end.date,
-        };
+        const eventData = buildEventData(event);
 
         const existingEvent = await Event.findOne({ googleId: event.id });
         if (existingEvent) {
@@ -269,3 +276,9 @@ exports.getEventById = async (req, res) => {
     });
   }
 };
+
+// Internals exposed for local preview/testing (previewCalendarSync.js). Not used by routes.
+exports.cleanEventDescription = cleanEventDescription;
+exports.formatTime = formatTime;
+exports.buildEventData = buildEventData;
+exports.syncEvents = syncEvents;
